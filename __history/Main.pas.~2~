@@ -1,0 +1,121 @@
+unit Main;
+
+interface
+
+uses
+  Winapi.Windows, Winapi.Messages, System.SysUtils, System.Variants, System.Classes, Vcl.Graphics,
+  Vcl.Controls, Vcl.Forms, Vcl.Dialogs, Vcl.StdCtrls,
+  IdHTTPServer, IdCustomHTTPServer, IdContext,
+  Contnrs, UProdutoModel;
+
+type
+  TForm1 = class(TForm)
+    MemoLog: TMemo;
+    btnStart: TButton;
+    btnStop: TButton;
+    procedure btnStartClick(Sender: TObject);
+    procedure btnStopClick(Sender: TObject);
+    procedure FormCreate(Sender: TObject);
+  private
+    HttpServer: TIdHTTPServer;
+    Produtos: TObjectList;
+
+    procedure CarregarProdutos;
+
+    procedure OnGetRequest(
+    AContext: TIdContext;
+    ARequestInfo: TIdHTTPRequestInfo;
+    AResponseInfo: TIdHTTPResponseInfo);
+
+    procedure OnOtherRequest(
+    AContext: TIdContext;
+    ARequestInfo: TIdHTTPRequestInfo;
+    AResponseInfo: TIdHTTPResponseInfo);
+
+  public
+    { Public declarations }
+  end;
+
+var
+  Form1: TForm1;
+
+implementation
+
+{$R *.dfm}
+
+procedure TForm1.btnStartClick(Sender: TObject);
+begin
+  HttpServer := TIdHTTPServer.Create(nil);
+
+  HttpServer.DefaultPort := 8080;
+
+  HttpServer.OnCommandGet := OnGetRequest;
+  HttpServer.OnCommandOther := OnOtherRequest;
+
+  HttpServer.Active := True;
+
+  MemoLog.Lines.Add('API ONLINE');
+end;
+
+procedure TForm1.btnStopClick(Sender: TObject);
+begin
+  HttpServer.Active := False;
+  HttpServer.Free;
+
+  MemoLog.Lines.Add('API OFFLINE');
+end;
+
+procedure TForm1.FormCreate(Sender: TObject);
+begin
+  Produtos := TObjectList.Create(True);
+  CarregarProdutos;
+end;
+
+procedure TForm1.CarregarProdutos;
+
+var
+  P: TProduto;
+
+begin
+
+  P := TProduto.Create;
+  P.Id := 1;
+  P.Nome := 'Notebook';
+  P.Preco := 3500;
+  Produtos.Add(P);
+
+  P := TProduto.Create;
+  P.Id := 2;
+  P.Nome := 'Mouse';
+  P.Preco := 120;
+  Produtos.Add(P);
+
+end;
+
+procedure TForm1.OnGetRequest(
+  AContext: TIdContext;
+  ARequestInfo: TIdHTTPRequestInfo;
+  AResponseInfo: TIdHTTPResponseInfo);
+
+begin
+  if ARequestInfo.Document = '/api/status' then
+  begin
+    AResponseInfo.ContentType := 'application/json';
+
+    AResponseInfo.ContentText :=
+      '{"status":"online"}';
+
+    Exit;
+  end;
+end;
+
+procedure TForm1.OnOtherRequest(
+  AContext: TIdContext;
+  ARequestInfo: TIdHTTPRequestInfo;
+  AResponseInfo: TIdHTTPResponseInfo);
+
+begin
+  AResponseInfo.ContentText := 'POST recebido';
+end;
+
+end.

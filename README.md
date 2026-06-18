@@ -83,6 +83,42 @@ Configuração na API: atualize a string de conexão conforme seu SGBD (Postgres
 
 ---
 
+## Banco de Dados Firebird
+
+- Arquivo do banco incluído no repositório: `database/PRODUTOS.FDB` (cópia para testes).
+- Versão recomendada: Firebird 2.5 ou 3.x (compatível com clientes FireDAC/IBX).
+- Porta padrão: `3050`.
+- Credenciais comuns (verifique o seu servidor): `SYSDBA` / `masterkey`.
+
+Exemplo de string de conexão (FireDAC):
+
+```text
+DriverID=FB
+Database=C:\caminho\para\projeto\database\PRODUTOS.FDB
+Server=localhost
+User_Name=SYSDBA
+Password=masterkey
+Port=3050
+```
+
+Exemplo rápido em Delphi (FireDAC):
+
+```pascal
+FDConnection1.Params.DriverID := 'FB';
+FDConnection1.Params.Database := 'C:\caminho\para\projeto\database\PRODUTOS.FDB';
+FDConnection1.Params.UserName := 'SYSDBA';
+FDConnection1.Params.Password := 'masterkey';
+FDConnection1.Params.Add('Server=localhost');
+FDConnection1.Params.Add('Port=3050');
+FDConnection1.Connected := True;
+```
+
+Observações:
+- Para uso local rápido é possível usar o modo embedded (copiando as bibliotecas de cliente embutidas), mas cuide das DLLs corretas (`fbclient.dll` / `fbembed.dll`) e da licença.
+- Confirme as credenciais e permissões do usuário antes de conectar; não deixe senhas padrão em ambientes de produção.
+- Ao referenciar o arquivo do projeto, você pode usar o caminho relativo `database/PRODUTOS.FDB` quando o servidor estiver na mesma máquina.
+
+
 ## 8. Exemplos de Requests e Responses
 
 1) GET /api/status

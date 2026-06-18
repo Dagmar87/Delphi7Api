@@ -8,7 +8,6 @@ uses
   System.SysUtils,
   System.Classes,
   System.JSON,
-  System.Generics.Collections,
   Vcl.Graphics,
   Vcl.Controls,
   Vcl.Forms,
@@ -17,7 +16,8 @@ uses
   IdHTTPServer,
   IdCustomHTTPServer,
   IdContext,
-  UProdutoModel;
+  UProdutoModel,
+  UDM;
 
 type
   TForm1 = class(TForm)
@@ -30,11 +30,13 @@ type
     procedure btnStopClick(Sender: TObject);
   private
     HttpServer: TIdHTTPServer;
-    Produtos: TObjectList<TProduto>;
-
-    procedure CarregarProdutos;
 
     procedure OnGetRequest(
+      AContext: TIdContext;
+      ARequestInfo: TIdHTTPRequestInfo;
+      AResponseInfo: TIdHTTPResponseInfo);
+
+    procedure OnOtherRequest(
       AContext: TIdContext;
       ARequestInfo: TIdHTTPRequestInfo;
       AResponseInfo: TIdHTTPResponseInfo);
@@ -60,33 +62,31 @@ implementation
 
 procedure TForm1.FormCreate(Sender: TObject);
 begin
-  Produtos := TObjectList<TProduto>.Create(True);
+
   HttpServer := nil;
 
-  CarregarProdutos;
+  try
+
+    DM.Conectar;
+
+    MemoLog.Lines.Add(
+      'Banco conectado com sucesso');
+
+  except
+    on E: Exception do
+      MemoLog.Lines.Add(
+        'Erro ao conectar banco: ' +
+        E.Message);
+  end;
+
 end;
 
 procedure TForm1.FormDestroy(Sender: TObject);
 begin
-  FreeAndNil(HttpServer);
-  FreeAndNil(Produtos);
-end;
 
-procedure TForm1.CarregarProdutos;
-var
-  P: TProduto;
-begin
-  P := TProduto.Create;
-  P.Id := 1;
-  P.Nome := 'Notebook';
-  P.Preco := 3500;
-  Produtos.Add(P);
+  if Assigned(HttpServer) then
+    FreeAndNil(HttpServer);
 
-  P := TProduto.Create;
-  P.Id := 2;
-  P.Nome := 'Mouse';
-  P.Preco := 120;
-  Produtos.Add(P);
 end;
 
 procedure TForm1.btnStartClick(Sender: TObject);
@@ -144,25 +144,22 @@ begin
     )
   );
 
-  // ==========================
-  // POST /api/produtos
-  // ==========================
   if SameText(ARequestInfo.Command, 'POST') then
+begin
+
+  if SameText(
+       ARequestInfo.Document,
+       '/api/produtos'
+     ) then
   begin
 
-    if SameText(
-         ARequestInfo.Document,
-         '/api/produtos'
-       ) then
-    begin
-      CriarProduto(
-        ARequestInfo,
-        AResponseInfo
-      );
+    CriarProduto(
+      ARequestInfo,
+      AResponseInfo);
 
-      Exit;
-    end;
+    Exit;
   end;
+end;
 
   // ==========================
   // GET /api/status
@@ -221,26 +218,69 @@ begin
     '{"erro":"rota nao encontrada"}';
 end;
 
+procedure TForm1.OnOtherRequest(
+  AContext: TIdContext;
+  ARequestInfo: TIdHTTPRequestInfo;
+  AResponseInfo: TIdHTTPResponseInfo);
+begin
+
+  if SameText(ARequestInfo.Command,'POST') and
+     SameText(ARequestInfo.Document,'/api/produtos/') then
+  begin
+    CriarProduto(
+      ARequestInfo,
+      AResponseInfo
+    );
+
+    Exit;
+  end;
+
+  AResponseInfo.ResponseNo := 404;
+  AResponseInfo.ContentType := 'application/json';
+  AResponseInfo.ContentText :=
+    '{"erro":"rota nao encontrada"}';
+end;
+
 procedure TForm1.RetornarProdutos(
   Response: TIdHTTPResponseInfo);
 var
-  Produto: TProduto;
   JsonArray: TJSONArray;
   JsonObj: TJSONObject;
 begin
+
   JsonArray := TJSONArray.Create;
 
   try
 
-    for Produto in Produtos do
+    DM.FDQueryProdutos.Close;
+
+    DM.FDQueryProdutos.SQL.Text :=
+      'SELECT * FROM PRODUTOS ORDER BY ID';
+
+    DM.FDQueryProdutos.Open;
+
+    while not DM.FDQueryProdutos.Eof do
     begin
+
       JsonObj := TJSONObject.Create;
 
-      JsonObj.AddPair('id', TJSONNumber.Create(Produto.Id));
-      JsonObj.AddPair('nome', Produto.Nome);
-      JsonObj.AddPair('preco', TJSONNumber.Create(Produto.Preco));
+      JsonObj.AddPair(
+        'id',
+        TJSONNumber.Create(
+          DM.FDQueryProdutos.FieldByName('ID').AsInteger));
+
+      JsonObj.AddPair(
+        'nome',
+        DM.FDQueryProdutos.FieldByName('NOME').AsString);
+
+      JsonObj.AddPair(
+        'preco',
+        TJSONNumber.Create(
+          DM.FDQueryProdutos.FieldByName('PRECO').AsFloat));
 
       JsonArray.AddElement(JsonObj);
+
+      DM.FDQueryProdutos.Next;
     end;
 
     Response.ContentType := 'application/json';
@@ -251,60 +291,6 @@ begin
   end;
 end;
 
-procedure TForm1.RetornarProdutoPorId(
-  Url: string;
-  Response: TIdHTTPResponseInfo);
-var
-  Produto: TProduto;
-  Id: Integer;
-  JsonObj: TJSONObject;
-begin
-
-  Id := StrToIntDef(
-    Copy(
-      Url,
-      Length('/api/produtos/') + 1,
-      MaxInt
-    ),
-    0
-  );
-
-  for Produto in Produtos do
-  begin
-    if Produto.Id = Id then
-    begin
-      JsonObj := TJSONObject.Create;
-
-      try
-        JsonObj.AddPair('id',
-          TJSONNumber.Create(Produto.Id));
-
-        JsonObj.AddPair('nome',
-          Produto.Nome);
-
-        JsonObj.AddPair('preco',
-          TJSONNumber.Create(Produto.Preco));
-
-        Response.ContentType :=
-          'application/json';
-
-        Response.ContentText :=
-          JsonObj.ToJSON;
-
-      finally
-        JsonObj.Free;
-      end;
-
-      Exit;
-    end;
-  end;
-
-  Response.ResponseNo := 404;
-  Response.ContentType := 'application/json';
-  Response.ContentText :=
-    '{"erro":"produto nao encontrado"}';
-end;
-
 procedure TForm1.CriarProduto(
   Request: TIdHTTPRequestInfo;
   Response: TIdHTTPResponseInfo);
@@ -312,7 +298,6 @@ var
   Stream: TStringStream;
   Body: string;
   Json: TJSONObject;
-  Produto: TProduto;
 begin
 
   if not Assigned(Request.PostStream) then
@@ -321,7 +306,6 @@ begin
     Response.ContentType := 'application/json';
     Response.ContentText :=
       '{"erro":"body nao informado"}';
-
     Exit;
   end;
 
@@ -348,43 +332,103 @@ begin
     begin
       Response.ResponseNo := 400;
       Response.ContentType := 'application/json';
-
       Response.ContentText :=
         '{"erro":"json invalido"}';
-
       Exit;
     end;
 
     try
 
-      Produto := TProduto.Create;
+      // Validação dos campos obrigatórios
 
-      Produto.Id :=
-        Json.GetValue<Integer>('id');
+      if Json.GetValue('id') = nil then
+      begin
+        Response.ResponseNo := 400;
+        Response.ContentType := 'application/json';
+        Response.ContentText :=
+          '{"erro":"campo id obrigatorio"}';
+        Exit;
+      end;
 
-      Produto.Nome :=
-        Json.GetValue<string>('nome');
+      if Json.GetValue('nome') = nil then
+      begin
+        Response.ResponseNo := 400;
+        Response.ContentType := 'application/json';
+        Response.ContentText :=
+          '{"erro":"campo nome obrigatorio"}';
+        Exit;
+      end;
 
-      Produto.Preco :=
-        Json.GetValue<Double>('preco');
+      if Json.GetValue('preco') = nil then
+      begin
+        Response.ResponseNo := 400;
+        Response.ContentType := 'application/json';
+        Response.ContentText :=
+          '{"erro":"campo preco obrigatorio"}';
+        Exit;
+      end;
 
-      Produtos.Add(Produto);
+      try
 
-      MemoLog.Lines.Add(
-        Format(
-          'Produto adicionado: %d - %s',
-          [
-            Produto.Id,
-            Produto.Nome
-          ]
-        )
-      );
+        DM.FDQueryProdutos.Close;
 
-      Response.ContentType :=
-        'application/json';
+        DM.FDQueryProdutos.SQL.Text :=
+          'INSERT INTO PRODUTOS ' +
+          '(ID,NOME,PRECO) ' +
+          'VALUES ' +
+          '(:ID,:NOME,:PRECO)';
 
-      Response.ContentText :=
-        '{"mensagem":"produto criado com sucesso"}';
+        DM.FDQueryProdutos.ParamByName('ID').AsInteger :=
+          Json.GetValue<Integer>('id');
+
+        DM.FDQueryProdutos.ParamByName('NOME').AsString :=
+          Json.GetValue<string>('nome');
+
+        DM.FDQueryProdutos.ParamByName('PRECO').AsFloat :=
+          Json.GetValue<Double>('preco');
+
+        DM.FDQueryProdutos.ExecSQL;
+
+        if DM.FDConnection.InTransaction then
+          DM.FDConnection.Commit;
+
+        MemoLog.Lines.Add(
+          Format(
+            'Produto inserido: %d - %s',
+            [
+              Json.GetValue<Integer>('id'),
+              Json.GetValue<string>('nome')
+            ]
+          )
+        );
+
+        Response.ResponseNo := 201;
+        Response.ContentType := 'application/json';
+        Response.ContentText :=
+          '{"mensagem":"produto criado com sucesso"}';
+
+      except
+        on E: Exception do
+        begin
+
+          Response.ResponseNo := 500;
+          Response.ContentType := 'application/json';
+
+          Response.ContentText :=
+            '{"erro":"' +
+            StringReplace(
+              E.Message,
+              '"',
+              '',
+              [rfReplaceAll]
+            ) +
+            '"}';
+
+          MemoLog.Lines.Add(
+            'ERRO INSERT: ' +
+            E.Message);
+        end;
+      end;
 
     finally
       Json.Free;
@@ -392,6 +436,70 @@ begin
 
   finally
     Stream.Free;
+  end;
+end;
+
+procedure TForm1.RetornarProdutoPorId(
+  Url: string;
+  Response: TIdHTTPResponseInfo);
+var
+  Id: Integer;
+  JsonObj: TJSONObject;
+begin
+
+  Id := StrToIntDef(
+    Copy(
+      Url,
+      Length('/api/produtos/') + 1,
+      MaxInt),
+    0);
+
+  DM.FDQueryProdutos.Close;
+
+  DM.FDQueryProdutos.SQL.Text :=
+    'SELECT * FROM PRODUTOS ' +
+    'WHERE ID = :ID';
+
+  DM.FDQueryProdutos.ParamByName('ID')
+    .AsInteger := Id;
+
+  DM.FDQueryProdutos.Open;
+
+  if DM.FDQueryProdutos.IsEmpty then
+  begin
+    Response.ResponseNo := 404;
+    Response.ContentType := 'application/json';
+    Response.ContentText :=
+      '{"erro":"produto nao encontrado"}';
+    Exit;
+  end;
+
+  JsonObj := TJSONObject.Create;
+
+  try
+
+    JsonObj.AddPair(
+      'id',
+      TJSONNumber.Create(
+        DM.FDQueryProdutos.FieldByName('ID').AsInteger));
+
+    JsonObj.AddPair(
+      'nome',
+      DM.FDQueryProdutos.FieldByName('NOME').AsString);
+
+    JsonObj.AddPair(
+      'preco',
+      TJSONNumber.Create(
+        DM.FDQueryProdutos.FieldByName('PRECO').AsFloat));
+
+    Response.ContentType :=
+      'application/json';
+
+    Response.ContentText :=
+      JsonObj.ToJSON;
+
+  finally
+    JsonObj.Free;
   end;
 end;
 

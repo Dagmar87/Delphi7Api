@@ -93,7 +93,7 @@ procedure TForm1.btnStartClick(Sender: TObject);
 begin
   if Assigned(HttpServer) then
   begin
-    MemoLog.Lines.Add('Servidor j√° iniciado.');
+    MemoLog.Lines.Add('Servidor j· iniciado.');
     Exit;
   end;
 
